@@ -1,18 +1,7 @@
 import 'package:flutter/material.dart';
+import '../models/category.dart';
 
-class CategoryData {
-  final String name;
-  final IconData icon;
-  final List<Color> gradient;
-  final List<String> affirmations;
-
-  const CategoryData({
-    required this.name,
-    required this.icon,
-    required this.gradient,
-    required this.affirmations,
-  });
-}
+export '../models/category.dart';
 
 const List<CategoryData> categories = [
   CategoryData(

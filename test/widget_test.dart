@@ -1,8 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:daily_affirmations/main.dart';
 
 void main() {
-  testWidgets('App renders home screen with categories', (WidgetTester tester) async {
+  setUp(() {
+    // Provide an empty backing store for SharedPreferences in tests.
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('App renders home screen with categories',
+      (WidgetTester tester) async {
     await tester.pumpWidget(const DailyAffirmationsApp());
     await tester.pumpAndSettle();
 

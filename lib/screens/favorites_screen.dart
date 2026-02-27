@@ -1,61 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../data/affirmations_data.dart';
-import '../services/preferences_service.dart';
+import '../providers/favorites_provider.dart';
 import 'affirmation_screen.dart';
 
-class FavoritesScreen extends StatefulWidget {
+class FavoritesScreen extends StatelessWidget {
   const FavoritesScreen({super.key});
 
   @override
-  State<FavoritesScreen> createState() => _FavoritesScreenState();
-}
-
-class _FavoritesScreenState extends State<FavoritesScreen> {
-  List<_FavoriteItem> _favorites = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFavorites();
-  }
-
-  Future<void> _loadFavorites() async {
-    final favoriteIds = await PreferencesService.getFavorites();
-    final List<_FavoriteItem> items = [];
-
-    for (final id in favoriteIds) {
-      final parts = id.split('_');
-      if (parts.length == 2) {
-        final catIndex = int.tryParse(parts[0]);
-        final affIndex = int.tryParse(parts[1]);
-        if (catIndex != null &&
-            affIndex != null &&
-            catIndex < categories.length &&
-            affIndex < categories[catIndex].affirmations.length) {
-          items.add(_FavoriteItem(
-            id: id,
-            categoryIndex: catIndex,
-            affirmationIndex: affIndex,
-          ));
-        }
-      }
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _favorites = items;
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _removeFavorite(String id) async {
-    await PreferencesService.toggleFavorite(id);
-    await _loadFavorites();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final favIds = context.watch<FavoritesProvider>().favorites;
+
+    // Resolve IDs → (categoryIndex, affirmationIndex) pairs
+    final items = favIds
+        .map((id) {
+          final parts = id.split('_');
+          if (parts.length != 2) return null;
+          final catIdx = int.tryParse(parts[0]);
+          final affIdx = int.tryParse(parts[1]);
+          if (catIdx == null ||
+              affIdx == null ||
+              catIdx >= categories.length ||
+              affIdx >= categories[catIdx].affirmations.length) return null;
+          return _FavoriteItem(
+              id: id, categoryIndex: catIdx, affirmationIndex: affIdx);
+        })
+        .whereType<_FavoriteItem>()
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -66,36 +38,34 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _favorites.isEmpty
-              ? _EmptyFavorites()
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _favorites.length,
-                  itemBuilder: (context, index) {
-                    final item = _favorites[index];
-                    final category = categories[item.categoryIndex];
-                    final affirmation =
-                        category.affirmations[item.affirmationIndex];
-                    return _FavoriteCard(
-                      category: category,
-                      affirmation: affirmation,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AffirmationScreen(
-                              categoryIndex: item.categoryIndex,
-                              initialPage: item.affirmationIndex,
-                            ),
-                          ),
-                        ).then((_) => _loadFavorites());
-                      },
-                      onRemove: () => _removeFavorite(item.id),
-                    );
-                  },
-                ),
+      body: items.isEmpty
+          ? const _EmptyFavorites()
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final category = categories[item.categoryIndex];
+                final affirmation =
+                    category.affirmations[item.affirmationIndex];
+                return _FavoriteCard(
+                  category: category,
+                  affirmation: affirmation,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AffirmationScreen(
+                        categoryIndex: item.categoryIndex,
+                        initialPage: item.affirmationIndex,
+                      ),
+                    ),
+                  ),
+                  onRemove: () => context
+                      .read<FavoritesProvider>()
+                      .toggleFavorite(item.id),
+                );
+              },
+            ),
     );
   }
 }
@@ -105,7 +75,7 @@ class _FavoriteItem {
   final int categoryIndex;
   final int affirmationIndex;
 
-  _FavoriteItem({
+  const _FavoriteItem({
     required this.id,
     required this.categoryIndex,
     required this.affirmationIndex,
@@ -182,6 +152,8 @@ class _FavoriteCard extends StatelessWidget {
 }
 
 class _EmptyFavorites extends StatelessWidget {
+  const _EmptyFavorites();
+
   @override
   Widget build(BuildContext context) {
     return Center(

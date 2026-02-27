@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'providers/favorites_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/favorites_screen.dart';
 
@@ -11,18 +13,21 @@ class DailyAffirmationsApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Daily Affirmations',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF667EEA),
-          brightness: Brightness.light,
+    return ChangeNotifierProvider(
+      create: (_) => FavoritesProvider(),
+      child: MaterialApp(
+        title: 'Daily Affirmations',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF667EEA),
+            brightness: Brightness.light,
+          ),
+          fontFamily: 'Roboto',
         ),
-        fontFamily: 'Roboto',
+        home: const MainNavigation(),
       ),
-      home: const MainNavigation(),
     );
   }
 }
