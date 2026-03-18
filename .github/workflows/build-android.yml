@@ -1,0 +1,148 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: "4.6.1"
+  GODOT_RELEASE: "stable"
+  EXPORT_NAME: "BlockBlast"
+  EXPORT_PRESET: "Android"
+  ANDROID_COMPILE_SDK: "33"
+  ANDROID_BUILD_TOOLS: "33.0.2"
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Cache Godot editor binary ──────────────────────────────────────────
+      - name: Cache Godot editor
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/godot
+          key: godot-editor-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}
+
+      # ── Cache export templates ─────────────────────────────────────────────
+      - name: Cache Godot export templates
+        id: cache-templates
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.${{ env.GODOT_RELEASE }}
+          key: godot-templates-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}
+
+      # ── Java & Android SDK ─────────────────────────────────────────────────
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: "11076708"
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "platform-tools"
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      # ── Install Godot editor (skip if cached) ──────────────────────────────
+      - name: Install Godot ${{ env.GODOT_VERSION }}
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          GODOT_FILENAME="Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64"
+          wget -q \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/${GODOT_FILENAME}.zip" \
+            -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot_bin
+          sudo mv "/tmp/godot_bin/${GODOT_FILENAME}" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+
+      - name: Verify Godot binary
+        run: godot --version
+
+      # ── Install export templates (skip if cached) ──────────────────────────
+      - name: Install Godot Android export templates
+        if: steps.cache-templates.outputs.cache-hit != 'true'
+        run: |
+          TEMPLATES_FILENAME="Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_export_templates.tpz"
+          wget -q \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/${TEMPLATES_FILENAME}" \
+            -O /tmp/templates.tpz
+          TEMPLATE_DIR=~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}
+          mkdir -p "${TEMPLATE_DIR}"
+          unzip -q /tmp/templates.tpz -d /tmp/templates_extracted
+          mv /tmp/templates_extracted/templates/* "${TEMPLATE_DIR}/"
+          echo "Templates installed to ${TEMPLATE_DIR}"
+          ls "${TEMPLATE_DIR}" | grep android || true
+
+      # ── Generate debug keystore ────────────────────────────────────────────
+      - name: Generate debug keystore
+        run: |
+          mkdir -p ~/.android
+          keytool -genkey -v \
+            -keystore ~/.android/debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass android \
+            -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US"
+          echo "Keystore created at ~/.android/debug.keystore"
+
+      # ── Configure Godot editor settings for Android SDK + keystore ─────────
+      - name: Configure Godot Android editor settings
+        run: |
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-4.tres <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$HOME/.android/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+
+      # ── Export ─────────────────────────────────────────────────────────────
+      - name: Create output directory
+        run: mkdir -p build
+
+      - name: Export Android APK (debug)
+        run: |
+          godot --headless --export-debug "$EXPORT_PRESET" "./build/${EXPORT_NAME}.apk"
+
+      - name: Verify APK was created
+        run: |
+          APK_PATH="./build/${EXPORT_NAME}.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "ERROR: APK not found at $APK_PATH"
+            echo "Contents of ./build/:"
+            ls -la ./build/ || echo "(directory empty or missing)"
+            exit 1
+          fi
+          echo "SUCCESS: APK created ($(du -sh "$APK_PATH" | cut -f1))"
+
+      # ── Upload artifact ────────────────────────────────────────────────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlockBlast-APK
+          path: ./build/${{ env.EXPORT_NAME }}.apk
+          retention-days: 30
